@@ -150,7 +150,8 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
     addCall.mutate(
       {
         call_timestamp: new Date().toISOString(),
-        caller: user?.id ?? null,
+        // LeadCall.caller is a text field (the caller's name), not a user id.
+        caller: user?.name ?? null,
         direction: call.direction,
         outcome: call.outcome || null,
         // Send the raw text; the backend parser is the source of truth for seconds.

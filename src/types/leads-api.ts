@@ -197,8 +197,8 @@ export interface ApiLeadCall {
   lead: number;
   call_timestamp: string;
   direction: "inbound" | "outbound";
-  /** User FK id of who made the call (backend requires it). */
-  caller: number | string | null;
+  /** Name of who made the call (plain text on the backend, required). Who logged it is `created_by`. */
+  caller: string | null;
   caller_name?: string;
   phone_number: string | null;
   duration_seconds: number | null;
