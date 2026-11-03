@@ -106,6 +106,22 @@ export function formatDuration(seconds: number | undefined): string {
   return `${m} min ${s.toString().padStart(2, "0")} sec`;
 }
 
+/** Seconds as MM:SS, e.g. 259 → "04:19" (same as the backend's duration_formatted). */
+export function formatMinSec(seconds: number | null | undefined): string {
+  const total = seconds && seconds > 0 ? seconds : 0;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
+/** Longer totals for summary cards: "1 h 05 min", or "4 min 19 sec" under an hour. */
+export function formatTalkTime(seconds: number): string {
+  if (seconds < 3600) return seconds > 0 ? formatDuration(seconds) : "0 sec";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h} h ${m.toString().padStart(2, "0")} min`;
+}
+
 /**
  * Parse a typed call duration to seconds, mirroring the backend's
  * `parse_duration_to_seconds`: "4:19", "4.19", "4m19s" and "259" are all 259,
