@@ -1,3 +1,4 @@
+import axios from "axios";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/auth";
 import { useDataSource } from "@/context/data-source";
 import { CALL_OUTCOMES, COUNSELORS, counselorName } from "@/data/lead-lookups";
-import { formatDateToNepalIso, toNepalIso } from "@/lib/leads-format";
+import { formatDateToNepalIso, formatDuration, parseDuration, toNepalIso } from "@/lib/leads-format";
 import { useAddCall, useAddFollowup, useAssignLead } from "@/hooks/use-leads";
 import { useCounselors } from "@/hooks/use-users";
 
@@ -79,6 +80,16 @@ const REMINDER_OFFSETS_MS: Record<FollowUpForm["reminder"], number> = {
   "1d": 24 * 60 * 60_000,
 };
 
+/** Backend errors that belong under the duration field (bad format, not enough minutes). */
+function durationFieldError(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null;
+  const data = error.response?.data as Record<string, unknown> | undefined;
+  const field = data?.duration_input ?? data?.duration_seconds;
+  if (field) return Array.isArray(field) ? field.join(" ") : String(field);
+  const detail = typeof data?.detail === "string" ? data.detail : "";
+  return /insufficient call minutes/i.test(detail) ? detail : null;
+}
+
 /**
  * All lead quick-actions live here. This is the static phase: the forms are
  * laid out with the fields the real workflow needs, but Save only shows a
@@ -95,11 +106,21 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
   const [call, setCall] = useState<CallForm>(EMPTY_CALL);
   const [fu, setFu] = useState<FollowUpForm>(EMPTY_FU);
   const [assignTo, setAssignTo] = useState("");
+  const [durationServerError, setDurationServerError] = useState<string | null>(null);
+  const durationSeconds = parseDuration(call.duration);
+  const durationError =
+    durationServerError ??
+    (durationSeconds == null ? "Use MM:SS (4:19), M.SS (4.19), 4m19s or seconds (259)." : null);
 
   // Pre-select the current owner when the Assign dialog opens.
   useEffect(() => {
     if (action === "assign") setAssignTo(lead?.assignedTo ?? "");
   }, [action, lead?.assignedTo]);
+
+  // A stale server error (e.g. insufficient minutes) shouldn't follow the dialog to its next open.
+  useEffect(() => {
+    if (action === "log_call") setDurationServerError(null);
+  }, [action]);
   const setC = <K extends keyof CallForm>(k: K, v: CallForm[K]) =>
     setCall((c) => ({ ...c, [k]: v }));
   const setF = <K extends keyof FollowUpForm>(k: K, v: FollowUpForm[K]) =>
@@ -124,13 +145,16 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
       setCall(EMPTY_CALL);
       return;
     }
+    if (durationSeconds == null) return;
+    const durationInput = call.duration.trim();
     addCall.mutate(
       {
         call_timestamp: new Date().toISOString(),
         caller: user?.id ?? null,
         direction: call.direction,
         outcome: call.outcome || null,
-        duration_seconds: call.duration ? Math.round(Number(call.duration) * 60) : null,
+        // Send the raw text; the backend parser is the source of truth for seconds.
+        ...(durationInput ? { duration_input: durationInput } : { duration_seconds: null }),
         recording_url: call.recording.trim() || null,
         notes: call.notes.trim() || null,
         next_followup_at: call.nextFollowUp ? toNepalIso(call.nextFollowUp) : null,
@@ -142,6 +166,7 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
           setCall(EMPTY_CALL);
           onClose();
         },
+        onError: (e) => setDurationServerError(durationFieldError(e)),
       },
     );
   }
@@ -215,14 +240,29 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Duration (minutes)</Label>
+                <Label htmlFor="call-duration">Duration</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  placeholder="e.g. 4"
+                  id="call-duration"
+                  placeholder="MM:SS, e.g. 4:19"
                   value={call.duration}
-                  onChange={(e) => setC("duration", e.target.value)}
+                  aria-invalid={durationError != null}
+                  aria-describedby="call-duration-hint"
+                  onChange={(e) => {
+                    setC("duration", e.target.value);
+                    setDurationServerError(null);
+                  }}
                 />
+                {durationError ? (
+                  <p id="call-duration-hint" className="text-destructive text-xs">
+                    {durationError}
+                  </p>
+                ) : (
+                  call.duration.trim() && (
+                    <p id="call-duration-hint" className="text-muted-foreground text-xs">
+                      = {durationSeconds ? formatDuration(durationSeconds) : "0 sec"}
+                    </p>
+                  )
+                )}
               </div>
               <div className="grid gap-2">
                 <Label>Recording link</Label>
@@ -265,7 +305,7 @@ export function LeadActionDialogs({ action, lead, onClose }: Props) {
             <Button variant="outline" onClick={onClose} disabled={addCall.isPending}>
               Cancel
             </Button>
-            <Button variant="brand" onClick={submitCall} disabled={addCall.isPending}>
+            <Button variant="brand" onClick={submitCall} disabled={addCall.isPending || durationError != null}>
               {addCall.isPending ? "Logging…" : "Log Call"}
             </Button>
           </DialogFooter>

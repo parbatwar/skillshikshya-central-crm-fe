@@ -202,6 +202,10 @@ export interface ApiLeadCall {
   caller_name?: string;
   phone_number: string | null;
   duration_seconds: number | null;
+  /** Write-only: raw typed duration ("4:19", "4.19", "4m19s", "259"), parsed by the backend. */
+  duration_input?: string;
+  /** Returned on create: caller's balance after the deduction. */
+  remaining_seconds?: number;
   outcome: string | null;
   notes: string | null;
   recording_url: string | null;

@@ -106,6 +106,32 @@ export function formatDuration(seconds: number | undefined): string {
   return `${m} min ${s.toString().padStart(2, "0")} sec`;
 }
 
+/**
+ * Parse a typed call duration to seconds, mirroring the backend's
+ * `parse_duration_to_seconds`: "4:19", "4.19", "4m19s" and "259" are all 259,
+ * "4.5" is 4 min 05 sec, and overflow carries ("7:89" = 8 min 29 sec).
+ * Empty input is 0. Returns null for anything invalid, including negatives.
+ */
+export function parseDuration(input: string): number | null {
+  const s = input.trim().toLowerCase();
+  if (!s) return 0;
+  const int = (p: string) => (/^\d+$/.test(p) ? Number(p) : NaN);
+  let total = NaN;
+  if (s.includes(":")) {
+    const parts = s.split(":").map(int);
+    if (parts.length === 2) total = parts[0] * 60 + parts[1];
+    else if (parts.length === 3) total = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  } else if (s.includes(".")) {
+    const [m, sec, ...rest] = s.split(".");
+    // Seconds part is truncated to 2 digits and left-padded: "4.5" → 05.
+    if (rest.length === 0) total = int(m) * 60 + int(sec.slice(0, 2).padStart(2, "0"));
+  } else {
+    const ms = /^(\d*)m(\d*)s$/.exec(s);
+    total = ms ? int(ms[1] || "0") * 60 + int(ms[2] || "0") : int(s);
+  }
+  return Number.isFinite(total) ? total : null;
+}
+
 export function initialsOf(name: string | null | undefined): string {
   if (!name) return "?";
   return (
